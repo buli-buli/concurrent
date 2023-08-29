@@ -7,7 +7,7 @@ import java.util.concurrent.*;
 
 /**
  * @ClassNAME HorseRace
- * @Description 使用CyclicBarrier实现赛马游戏仿真
+ * @Description 使用CyclicBarrier实现赛马游戏仿真 Cyclic适用于这样的情况：你希望创建一组任务，他们并行地执行工作，然后在进行到下一个步骤之前等待，直至所有任务都完成
  * @Author yu
  * @Date 2023/8/29 20:56
  * @Version 1.0
