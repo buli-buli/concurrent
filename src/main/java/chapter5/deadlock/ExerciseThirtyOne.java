@@ -80,14 +80,7 @@ class Philosopher31 implements Runnable {
                 System.out.println(this + " " + "thinking");
                 pause();
                 System.out.println(this + " " + "grabbing both");
-                if (bin.getChopSticks(this)) {
-                    System.out.println(this + " " + "eating");
-                    pause();
-                    bin.putChopSticks(left, right);
-                } else {
-                    pause();
-                }
-
+                bin.getChopSticks(this);
             }
         } catch (InterruptedException e) {
             System.out.println(this + " " + "exiting via interrupt");
@@ -107,14 +100,13 @@ class ChopstickBin {
         this.queue = queue;
     }
 
-    protected synchronized boolean getChopSticks(Philosopher31 philosopher) {
-        if (queue.size() > 1) {
-            philosopher.setLeft(queue.poll());
-            philosopher.setRight(queue.poll());
-            return true;
+    protected synchronized void getChopSticks(Philosopher31 philosopher) throws InterruptedException {
+        while (queue.size() < 2) {
+            wait();
         }
 
-        return false;
+        philosopher.setLeft(queue.poll());
+        philosopher.setRight(queue.poll());
     }
 
     protected synchronized boolean putChopSticks(Chopstick left, Chopstick right) {
