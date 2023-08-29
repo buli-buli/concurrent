@@ -1,4 +1,4 @@
-package chapter5.deadlock;
+package chapter6;
 
 import java.util.LinkedList;
 import java.util.Random;
