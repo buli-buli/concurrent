@@ -87,7 +87,17 @@ class Table implements Runnable {
         return "Table " + id + "";
     }
 
-    public void orderTicket() {
+    public synchronized void waitForTicket() {
+        while (null == ticket) {
+            try {
+                wait();
+            } catch (InterruptedException e) {
+                System.out.println(this + " interrupted while waiting for tickets");
+            }
+        }
+    }
+
+    public synchronized void orderTicket() {
         OrderTicket ticket = new OrderTicket(this);
         System.out.println(shortString() + "ordering...");
         try {
@@ -100,6 +110,7 @@ class Table implements Runnable {
             }
             this.ticket = ticket;
             restaurant.requiring.put(ticket);
+            notifyAll();
         } catch (InterruptedException e) {
             System.out.println(shortString() + " interrupted while ordering...");
         }
@@ -110,17 +121,18 @@ class Table implements Runnable {
     public void run() {
         try {
             while (!Thread.interrupted()) {
-                while (null != ticket) {
-                    Plate p = platesSetting.take();
-                    System.out.println(this + " eating " + p);
-                    TimeUnit.MILLISECONDS.sleep(500);
-                    ticket.served++;
-                    if (ticket.served >= ticket.ordered) {
-                        // 菜都上齐了
-                        TimeUnit.MILLISECONDS.sleep(rand.nextInt(200));
-                        System.out.println("Customers on " + shortString() + " are talking after finished meal");
-                        leave();
-                    }
+                // 等待客户点菜
+                waitForTicket();
+
+                Plate p = platesSetting.take();
+                System.out.println(this + " eating " + p);
+                TimeUnit.MILLISECONDS.sleep(500);
+                ticket.served++;
+                if (ticket.served >= ticket.ordered) {
+                    // 菜都上齐了
+                    TimeUnit.MILLISECONDS.sleep(rand.nextInt(200));
+                    System.out.println("Customers on " + shortString() + " are talking after finished meal");
+                    leave();
                 }
             }
         } catch (InterruptedException e) {
