@@ -63,6 +63,7 @@ class Table implements Runnable {
         System.out.println("Customers on " + shortString() + " leaved");
         System.out.println("Cleaning table");
         try {
+            TimeUnit.MILLISECONDS.sleep(50);
             restaurant.ocuupiedTable.remove(this);
             restaurant.emptyTable.put(this);
         } catch (InterruptedException e) {
@@ -87,13 +88,9 @@ class Table implements Runnable {
         return "Table " + id + "";
     }
 
-    public synchronized void waitForTicket() {
+    public synchronized void waitForTicket() throws InterruptedException {
         while (null == ticket) {
-            try {
-                wait();
-            } catch (InterruptedException e) {
-                System.out.println(this + " interrupted while waiting for tickets");
-            }
+            wait();
         }
     }
 
