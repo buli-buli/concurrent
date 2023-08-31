@@ -1,6 +1,7 @@
 package chapter8.restaurant.exercise36;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.*;
@@ -29,53 +30,103 @@ public class ExerciseThirtySix {
     }
 }
 
-class Table {
+class Table implements Runnable {
     private static int counter = 0;
     private final int id = counter++;
+    private static final Random rand = new Random(47);
     private final int capacity;
     final WaitPerson waitPerson;
+    final Restaurant restaurant;
     OrderTicket ticket;
     SynchronousQueue<Plate> platesSetting = new SynchronousQueue<>();
-    LinkedBlockingQueue<Customer> customers = new LinkedBlockingQueue<>();
+    List<Customer> customers = Collections.synchronizedList(new ArrayList<>());
 
     public Table(int capacity, WaitPerson wp, Restaurant restaurant) {
         this.capacity = capacity;
         this.waitPerson = wp;
-        ticket = new OrderTicket(restaurant, this);
+        this.restaurant = restaurant;
     }
 
     public int getCapacity() {
         return capacity;
     }
 
-    public boolean join(Customer c) {
-        if (customers.size() >= capacity) {
-            System.out.println(this + " is full");
-            return false;
-        }
-
-        try {
-            customers.put(c);
-        } catch (InterruptedException e) {
-            System.out.println(this + " interrupted while " + c + " is joining");
-        }
-
-        return true;
-    }
-
-    public void leave(Customer customer) {
-        if (customers.remove(customer)) {
-            System.out.println(customer + " has leaved");
-        }
-    }
-
-    public void deliver(Plate p) throws InterruptedException {
+    public void deliver(WaitPerson wp, Plate p) throws InterruptedException {
+        System.out.println(wp + " delivering " + p + " to " + shortString());
         platesSetting.put(p);
+    }
+
+    public void leave() {
+        ticket.ordered = 0;
+        ticket = null;
+        customers.clear();
+        System.out.println("Customers on " + shortString() + " leaved");
+        System.out.println("Cleaning table");
+        try {
+            TimeUnit.MILLISECONDS.sleep(5);
+            restaurant.ocuupiedTable.remove(this);
+            restaurant.emptyTable.put(this);
+        } catch (InterruptedException e) {
+            System.out.println(shortString() + " interrupted while cleaning");
+        }
     }
 
     @Override
     public String toString() {
-        return "Table{" + "id=" + id + '}';
+        StringBuilder builder = new StringBuilder();
+        builder.append("Table " + id);
+        builder.append(", Customers:{");
+        for (Customer c : customers) {
+            builder.append(c + ", ");
+        }
+        builder.append("}");
+
+        return builder.toString();
+    }
+
+    public String shortString() {
+        return "Table " + id + "";
+    }
+
+    public void orderTicket() {
+        OrderTicket ticket = new OrderTicket(this);
+        System.out.println(shortString() + "ordering...");
+        try {
+            for (Course course : Course.values()) {
+                Food food = course.randomSelection();
+                // 点菜
+                System.out.println(shortString() + " ordered " + food);
+                ticket.plates.put(new Plate(ticket, food, this, waitPerson));
+                ticket.ordered++;
+            }
+            this.ticket = ticket;
+            restaurant.requiring.put(ticket);
+        } catch (InterruptedException e) {
+            System.out.println(shortString() + " interrupted while ordering...");
+        }
+
+    }
+
+    @Override
+    public void run() {
+        try {
+            while (!Thread.interrupted()) {
+                while (null != ticket) {
+                    Plate p = platesSetting.take();
+                    System.out.println(this + " eating " + p);
+                    TimeUnit.MILLISECONDS.sleep(50);
+                    ticket.served++;
+                    if (ticket.served >= ticket.ordered) {
+                        // 菜都上齐了
+                        TimeUnit.MILLISECONDS.sleep(rand.nextInt(200));
+                        System.out.println("Customers on " + shortString() + " are talking after finished meal");
+                        leave();
+                    }
+                }
+            }
+        } catch (InterruptedException e) {
+            System.out.println(shortString() + " interrupted while ordering");
+        }
     }
 }
 
@@ -83,41 +134,44 @@ class OrderTicket {
     private static int counter = 0;
     private final int id = counter++;
     private Table table;
-    private Restaurant restaurant;
+    volatile int ordered = 0;
+    volatile int served = 0;
+    BlockingQueue<Plate> plates = new LinkedBlockingQueue<>();
 
-    public OrderTicket(Restaurant restaurant, Table table) {
+    public OrderTicket(Table table) {
         this.table = table;
-        this.restaurant = restaurant;
     }
 
     public Table getTable() {
         return table;
     }
 
-    public void addRequire(Plate plate) {
-        try {
-            restaurant.requiring.put(plate);
-        } catch (InterruptedException e) {
-            System.out.println(this + " interrupted while adding plate");
-        }
+    public String shortString() {
+        return "OrderTicket{" + "id=" + id + "}";
     }
 
     @Override
     public String toString() {
-        return "OrderTicket{" + "id=" + id + "}";
+        StringBuilder builder = new StringBuilder();
+        builder.append("OrderTicket " + id + " Plates:{");
+        for (Plate p : plates) {
+            builder.append(p + ", ");
+        }
+        builder.append("}");
+        return builder.toString();
     }
 }
 
 class Plate {
     private final OrderTicket ticket;
     final Food food;
-    Customer customer;
+    Table table;
     WaitPerson waitPerson;
 
-    public Plate(OrderTicket ticket, Food food, Customer customer, WaitPerson waitPerson) {
+    public Plate(OrderTicket ticket, Food food, Table table, WaitPerson waitPerson) {
         this.ticket = ticket;
         this.food = food;
-        this.customer = customer;
+        this.table = table;
         this.waitPerson = waitPerson;
     }
 
@@ -129,44 +183,17 @@ class Plate {
         return food;
     }
 
-    public Customer getCustomer() {
-        return customer;
-    }
-
     @Override
     public String toString() {
         return food.toString();
     }
 }
 
-class Customer implements Runnable {
+class Customer {
     private static int counter = 0;
     private final int id = counter++;
-    private static Random rand = new Random(47);
-    private Table table;
-    private Restaurant restaurant;
 
-    public Customer(Restaurant restaurant) {
-        this.restaurant = restaurant;
-    }
-
-    @Override
-    public void run() {
-        Table t = restaurant.getASeat(this);
-        if (null == t) {
-            System.out.println("没位置了, " + this + " 气哄哄地离开了");
-            Thread.interrupted();
-        }
-        for (Course course : Course.values()) {
-            Food food = course.randomSelection();
-
-            t.join(this);
-            this.table = t;
-            // 点菜
-            System.out.println(this + " ordered " + food + " on " + table);
-            table.ticket.addRequire(new Plate(table.ticket, food, this, table.waitPerson));
-        }
-    }
+    public Customer() {}
 
     @Override
     public String toString() {
@@ -189,9 +216,10 @@ class WaitPerson implements Runnable {
         try {
             while (!Thread.interrupted()) {
                 Plate plate = filledOrders.take();
-                System.out.println(this + " received " + plate + " delivering to " + plate.getCustomer());
+                System.out.println(
+                    this + " received " + plate + " delivering to " + plate.getTicket().getTable().shortString());
                 // 上菜
-                plate.getTicket().getTable().deliver(plate);
+                plate.getTicket().getTable().deliver(this, plate);
             }
         } catch (InterruptedException e) {
             System.out.println(this + " interrupted");
@@ -220,9 +248,12 @@ class Chef implements Runnable {
     public void run() {
         try {
             while (!Thread.interrupted()) {
-                Plate plate = restaurant.requiring.take();
-                TimeUnit.MILLISECONDS.sleep(rand.nextInt(5000));
-                plate.waitPerson.filledOrders.put(plate);
+                OrderTicket ticket = restaurant.requiring.take();
+                while (!ticket.plates.isEmpty()) {
+                    Plate p = ticket.plates.take();
+                    TimeUnit.MILLISECONDS.sleep(rand.nextInt(500));
+                    p.waitPerson.filledOrders.put(p);
+                }
             }
         } catch (InterruptedException e) {
             System.out.println(this + " interrupted");
@@ -240,25 +271,27 @@ class Chef implements Runnable {
 class Restaurant implements Runnable {
     private List<WaitPerson> waitPersons = new ArrayList<>();
     private List<Chef> chefs = new ArrayList<>();
-    List<Table> tables = new ArrayList<>();
+    private static Random rand = new Random(47);
     ExecutorService exec;
-    BlockingQueue<Plate> requiring = new LinkedBlockingQueue<>();
-    private volatile int customerCount = 0;
+    BlockingQueue<OrderTicket> requiring = new LinkedBlockingQueue<>();
+    BlockingQueue<Table> ocuupiedTable = new LinkedBlockingQueue<>();
+    BlockingQueue<Table> emptyTable = new LinkedBlockingQueue<>();
 
     public Restaurant(ExecutorService exec, int nWaitPersons, int nChefs) {
         this.exec = exec;
 
-        for (int i = 0; i < nWaitPersons; i++) {
-            WaitPerson waitPerson = new WaitPerson(this);
-            waitPersons.add(waitPerson);
+        try {
+            for (int i = 0; i < nWaitPersons; i++) {
+                WaitPerson waitPerson = new WaitPerson(this);
+                waitPersons.add(waitPerson);
+                exec.execute(waitPerson);
 
-            Table table = new Table(3, waitPerson, this);
-            tables.add(table);
-
-            Dinning dinning = new Dinning(table);
-
-            exec.execute(waitPerson);
-            exec.execute(dinning);
+                Table table = new Table(3, waitPerson, this);
+                emptyTable.put(table);
+                exec.execute(table);
+            }
+        } catch (InterruptedException e) {
+            System.out.println("Interrupted while initialing restaurant");
         }
 
         for (int i = 0; i < nChefs; i++) {
@@ -272,55 +305,25 @@ class Restaurant implements Runnable {
     public void run() {
         try {
             while (!Thread.interrupted()) {
-                Customer c = new Customer(this);
-                exec.execute(c);
-                customerCount++;
-                TimeUnit.MILLISECONDS.sleep(1000);
+                // 模拟随机到店的客人,人数随机生成，范围在1-4
+                Table t = emptyTable.take();
+                int customerNum = rand.nextInt(4) + 1;
+                for (int i = 0; i < customerNum; i++) {
+                    Customer c = new Customer();
+                    t.customers.add(c);
+                }
+                ocuupiedTable.put(t);
+                System.out.println("Table joined " + t);
+
+                TimeUnit.MILLISECONDS.sleep(200);
+                t.orderTicket();
+
+                TimeUnit.MILLISECONDS.sleep(2000);
             }
         } catch (InterruptedException e) {
             System.out.println("Restaurant interrupted");
         }
 
         System.out.println("Restaurant closing");
-    }
-
-    public Table getASeat(Customer customer) {
-        for (Table t : tables) {
-            if (t.customers.size() <= t.getCapacity()) {
-                t.join(customer);
-                return t;
-            }
-        }
-        return null;
-    }
-}
-
-class Dinning implements Runnable {
-    private static int counter = 0;
-    private final int id = counter++;
-    private Table table;
-
-    public Dinning(Table table) {
-        this.table = table;
-    }
-
-    @Override
-    public String toString() {
-        return "Dinning{" + "id=" + id + '}';
-    }
-
-    @Override
-    public void run() {
-        try {
-            while (!Thread.interrupted()) {
-                Plate plate = table.platesSetting.take();
-                Customer c = plate.getCustomer();
-                System.out.println(c + " is having " + plate.food);
-                Thread.sleep(100);
-                table.leave(c);
-            }
-        } catch (InterruptedException e) {
-            System.out.println(this + " interrupted");
-        }
     }
 }
