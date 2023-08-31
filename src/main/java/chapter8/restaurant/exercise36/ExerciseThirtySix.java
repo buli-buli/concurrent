@@ -38,7 +38,7 @@ class Table implements Runnable {
     final WaitPerson waitPerson;
     final Restaurant restaurant;
     OrderTicket ticket;
-    SynchronousQueue<Plate> platesSetting = new SynchronousQueue<>();
+    LinkedBlockingQueue<Plate> platesSetting = new LinkedBlockingQueue<>();
     List<Customer> customers = Collections.synchronizedList(new ArrayList<>());
 
     public Table(int capacity, WaitPerson wp, Restaurant restaurant) {
@@ -63,7 +63,6 @@ class Table implements Runnable {
         System.out.println("Customers on " + shortString() + " leaved");
         System.out.println("Cleaning table");
         try {
-            TimeUnit.MILLISECONDS.sleep(5);
             restaurant.ocuupiedTable.remove(this);
             restaurant.emptyTable.put(this);
         } catch (InterruptedException e) {
@@ -114,7 +113,7 @@ class Table implements Runnable {
                 while (null != ticket) {
                     Plate p = platesSetting.take();
                     System.out.println(this + " eating " + p);
-                    TimeUnit.MILLISECONDS.sleep(50);
+                    TimeUnit.MILLISECONDS.sleep(500);
                     ticket.served++;
                     if (ticket.served >= ticket.ordered) {
                         // 菜都上齐了
@@ -315,10 +314,8 @@ class Restaurant implements Runnable {
                 ocuupiedTable.put(t);
                 System.out.println("Table joined " + t);
 
-                TimeUnit.MILLISECONDS.sleep(200);
                 t.orderTicket();
 
-                TimeUnit.MILLISECONDS.sleep(2000);
             }
         } catch (InterruptedException e) {
             System.out.println("Restaurant interrupted");
